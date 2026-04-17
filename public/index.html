@@ -330,10 +330,11 @@
       .suggestion { font-size: 12px; padding: 6px 12px; }
       .bubble { font-size: 14px; padding: 10px 13px; }
       .bubble img { max-width: 200px; }
-      #input-area { padding: 10px 12px 14px; }
+      #input-area { padding: 10px 12px env(safe-area-inset-bottom, 14px); }
       .hint { display: none; }
-      .input-btn { width: 32px; height: 32px; font-size: 16px; }
-      #msg { font-size: 16px; } /* prevents iOS zoom */
+      .input-btn { width: 36px; height: 36px; font-size: 18px; }
+      #msg { font-size: 16px; min-height: 24px; -webkit-appearance: none; }
+      .input-row { padding: 10px 12px; align-items: center; }
     }
   </style>
 </head>
@@ -379,8 +380,9 @@
 
 <div id="input-area">
   <div class="input-row">
-    <textarea id="msg" rows="1" placeholder="Ask anything..." autocomplete="off"></textarea>
-    <input type="file" id="photo-input" accept="image/*" style="display:none">
+    <textarea id="msg" rows="1" placeholder="Ask anything..." autocomplete="off" autocorrect="on" autocapitalize="sentences"></textarea>
+    <input type="file" id="photo-input" accept="image/*">
+    <button class="input-btn" id="photo-btn" title="Attach photo" onclick="document.getElementById('photo-input').click()">📷</button>
     <button class="input-btn" id="mic-btn" title="Voice input">🎤</button>
     <button class="input-btn" id="send-btn" title="Send">➤</button>
   </div>
@@ -445,7 +447,7 @@
     if (!voiceEnabled || !window.speechSynthesis) return;
     speechSynthesis.cancel();
 
-    // Clean markdown and add natural pauses
+    // Clean markdown
     const clean = text
       .replace(/\*\*(.*?)\*\*/g, '$1')
       .replace(/\*(.*?)\*/g, '$1')
@@ -453,23 +455,35 @@
       .replace(/#{1,6}\s/g, '')
       .replace(/\n\n+/g, '. ')
       .replace(/\n/g, ', ')
-      .replace(/([.!?])\s+/g, '$1 ')   // normalise spacing after punctuation
       .trim();
 
-    const utter = new SpeechSynthesisUtterance(clean);
-    utter.rate  = 0.88;   // slightly slower = more natural
-    utter.pitch = 1.0;    // neutral pitch — avoids robotic high pitch
-    utter.volume = 1;
+    // Split into sentences for more natural rhythm
+    const sentences = clean.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [clean];
 
-    const v = pickVoice();
-    if (v) utter.voice = v;
+    const voice = pickVoice();
+    let i = 0;
 
     if (indicator) { indicator.classList.add('active'); currentSpeakingBubble = indicator; }
-    utter.onend  = () => { if (indicator) indicator.classList.remove('active'); };
-    utter.onerror = () => { if (indicator) indicator.classList.remove('active'); };
 
-    currentUtterance = utter;
-    speechSynthesis.speak(utter);
+    function speakNext() {
+      if (i >= sentences.length) {
+        if (indicator) indicator.classList.remove('active');
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(sentences[i].trim());
+      utter.rate   = 0.85;   // calm, unhurried
+      utter.pitch  = 0.95;   // slightly lower = warmer, less robotic
+      utter.volume = 1;
+      if (voice) utter.voice = voice;
+
+      utter.onend  = () => { i++; speakNext(); };
+      utter.onerror = () => { if (indicator) indicator.classList.remove('active'); };
+
+      currentUtterance = utter;
+      speechSynthesis.speak(utter);
+    }
+
+    speakNext();
   }
 
   // ── STT ──────────────────────────────────────────────────────
@@ -545,7 +559,11 @@
     msgEl.style.height = 'auto';
     msgEl.style.height = Math.min(msgEl.scrollHeight, 120) + 'px';
   }
-  msgEl.addEventListener('input', autoResize);
+  msgEl.addEventListener('input', () => {
+    autoResize();
+    const welcome = document.getElementById('welcome');
+    if (welcome && msgEl.value.trim()) welcome.remove();
+  });
 
   msgEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
